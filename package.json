@@ -1,0 +1,20 @@
+{
+  "name": "finch",
+  "version": "1.0.0",
+  "description": "tech-test",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:craigduggan90/finch.git"
+  },
+  "license": "UNLICENSED",
+  "author": "Craig Duggan",
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "commitlint": "^19.8.1",
+    "husky": "^9.1.7"
+  },
+  "scripts": {
+    "prepare": "husky"
+  }
+}
