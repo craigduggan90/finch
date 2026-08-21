@@ -7,6 +7,8 @@ public class MaximumLoanAmountSpecification : ISpecification<LoanApplication>
 {
     private const decimal MaximumLoanAmount = 1_500_000m;
 
+    public int Order => 2;
+
     public string Description => "Loan amount must not exceed £1,500,000.";
 
     public bool IsApplicableTo(LoanApplication item) => true;

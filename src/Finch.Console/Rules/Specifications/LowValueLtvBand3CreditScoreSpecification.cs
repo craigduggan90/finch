@@ -10,6 +10,8 @@ public class LowValueLtvBand3CreditScoreSpecification : ISpecification<LoanAppli
     private const decimal BandCeilingLtv = 90m;
     private const int MinimumCreditScore = 900;
 
+    public int Order => 8;
+
     public string Description => "Loans under £1,000,000 with LTV between 80% and 90% require a credit score of at least 900.";
 
     public bool IsApplicableTo(LoanApplication item) =>

@@ -12,8 +12,9 @@ namespace Finch.Console.DependencyInjection;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers every component of the lending platform. Rule registration order determines
-    /// evaluation order in <see cref="RulesEngine"/> - see CLAUDE.md "Future considerations".
+    /// Registers every component of the lending platform. Registration order below is purely
+    /// cosmetic (matches the rule table in CLAUDE.md) - <see cref="RulesEngine"/> sorts by each
+    /// rule's <see cref="ISpecification{T}.Order"/>, so evaluation order doesn't depend on it.
     /// </summary>
     public static IServiceCollection AddLendingPlatform(this IServiceCollection services)
     {

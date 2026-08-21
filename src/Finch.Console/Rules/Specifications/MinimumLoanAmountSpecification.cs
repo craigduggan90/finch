@@ -7,6 +7,8 @@ public class MinimumLoanAmountSpecification : ISpecification<LoanApplication>
 {
     private const decimal MinimumLoanAmount = 100_000m;
 
+    public int Order => 1;
+
     public string Description => "Loan amount must be at least £100,000.";
 
     public bool IsApplicableTo(LoanApplication item) => true;

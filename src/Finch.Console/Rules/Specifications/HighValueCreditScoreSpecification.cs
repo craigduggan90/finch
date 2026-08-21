@@ -8,6 +8,8 @@ public class HighValueCreditScoreSpecification : ISpecification<LoanApplication>
     private const decimal HighValueThreshold = 1_000_000m;
     private const int MinimumCreditScore = 950;
 
+    public int Order => 4;
+
     public string Description => "High value loans (£1m or more) require a credit score of at least 950.";
 
     public bool IsApplicableTo(LoanApplication item) => item.LoanAmount >= HighValueThreshold;

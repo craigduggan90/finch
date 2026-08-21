@@ -2,6 +2,12 @@ namespace Finch.Console.Rules;
 
 public interface ISpecification<T>
 {
+    /// <summary>
+    /// Determines this rule's position in evaluation order (ascending) within <see cref="Rules.RulesEngine"/>,
+    /// independent of DI registration order - so evaluation order is an explicit, stable contract.
+    /// </summary>
+    int Order { get; }
+
     /// <summary>Whether this rule should be evaluated for the given item.</summary>
     bool IsApplicableTo(T item);
 

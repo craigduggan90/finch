@@ -8,6 +8,8 @@ public class LowValueMaximumLtvSpecification : ISpecification<LoanApplication>
     private const decimal HighValueThreshold = 1_000_000m;
     private const decimal MaximumLtv = 90m;
 
+    public int Order => 5;
+
     public string Description => "Loans under £1,000,000 require an LTV below 90%.";
 
     public bool IsApplicableTo(LoanApplication item) => item.LoanAmount < HighValueThreshold;

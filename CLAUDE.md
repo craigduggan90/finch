@@ -60,9 +60,12 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   constructing a whole `LoanApplicationRequest` and validating it afterwards with a dictionary of
   errors. See **AI collaboration log** — this replaced an earlier design.
 - **Specification pattern**: `ISpecification<LoanApplication>` with `IsApplicableTo`,
-  `IsSatisfiedBy`, and `Description`. Each of the 8 rules above is its own class — no combined/
-  compound rules. All implementations are registered in DI and injected into a `RulesEngine` as
-  `IEnumerable<ISpecification<LoanApplication>>`.
+  `IsSatisfiedBy`, `Description`, and `Order`. Each of the 8 rules above is its own class — no
+  combined/compound rules. All implementations are registered in DI and injected into a
+  `RulesEngine` as `IEnumerable<ISpecification<LoanApplication>>`; the engine sorts by `Order`
+  (matching the table's numbering, 1–8) before evaluating, so evaluation order — and therefore
+  which reason is returned on decline — is a stable, explicit contract rather than an accident of
+  DI registration order.
 - **Single console writer**: exactly one class is allowed to call `System.Console.Write*` — an
   `IConsoleWriter` implementation, injected everywhere output happens. This is what integration
   tests swap out (analogous to `FakeLogger` for `ILogger`) to assert on printed output without
@@ -83,11 +86,12 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   cascading structure hints at families (general limits vs. high-value vs. low-value-by-band) that
   could become explicit groupings later — e.g. if new loan categories are added, or if rules need
   shared metadata (a category tag, a severity, an owner).
-- **Execution order matters, and only the first failure is surfaced.** Because decline reasons are
-  "first failing rule in evaluation order," fixing one problem in a UI/API consumer could just
-  reveal the next one ("whack-a-mole"). A production version should probably surface *all* failing
-  rules at once, or make evaluation order an explicit, tested contract rather than an implicit
-  consequence of DI registration order.
+- **Only the first failure is surfaced.** Because decline reasons are "first failing rule in
+  evaluation order," fixing one problem in a UI/API consumer could just reveal the next one
+  ("whack-a-mole"). A production version should probably surface *all* failing rules at once.
+  Evaluation order itself is no longer the risk here - each `ISpecification<T>` declares an
+  explicit `Order`, and `RulesEngine` sorts by it before evaluating, so which reason comes back
+  first is a stable, tested contract independent of DI registration order (see AI log below).
 - **Synchronous rule evaluation**: fine today since there's no I/O per rule. If rules ever need to
   call out to a credit bureau, fraud service, etc., `ISpecification` and `RulesEngine` would need
   async variants.
@@ -189,6 +193,21 @@ class (`LendingPlatformIntegrationTestsBase`) needs real setup logic (building t
 resolving services) that doesn't fit as a primary-constructor one-liner the way the unit test bases
 do (which just need `new()` for a specification/validator). It uses a normal constructor body
 instead of the `ClassNameTestsBase()` primary-constructor shape used everywhere else.
+
+### Change request: explicit rule ordering
+
+Craig asked for an `Order` property on the specifications, sorted before evaluation, "to ensure
+consistency across calls" - directly closing the DI-registration-order risk flagged in Future
+considerations above (and in the original implementation plan's assumptions). Added `int Order`
+to `ISpecification<T>`, assigned 1–8 to the existing rules matching the table's numbering, and
+changed `RulesEngine` to `OrderBy(specification => specification.Order)` in its constructor rather
+than trusting enumeration order. `AddLendingPlatform`'s registration order is now cosmetic only -
+its doc comment was updated to say so.
+
+Added a unit test (`ShouldEvaluateByOrderProperty_RegardlessOfTheOrderRulesWereSupplied`) that
+constructs fake specifications deliberately out of `Order` sequence and asserts the engine still
+evaluates - and stops - by `Order`, not by the sequence they were passed in. Without this test, a
+future refactor could reintroduce an implicit ordering dependency without anything failing.
 
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.

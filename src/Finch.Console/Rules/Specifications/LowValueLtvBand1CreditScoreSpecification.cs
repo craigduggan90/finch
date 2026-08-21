@@ -9,6 +9,8 @@ public class LowValueLtvBand1CreditScoreSpecification : ISpecification<LoanAppli
     private const decimal BandCeilingLtv = 60m;
     private const int MinimumCreditScore = 750;
 
+    public int Order => 6;
+
     public string Description => "Loans under £1,000,000 with LTV below 60% require a credit score of at least 750.";
 
     public bool IsApplicableTo(LoanApplication item) =>
