@@ -17,23 +17,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: ☁️ install tools
-        run: dotnet tool install -g dotnet-reportgenerator-globaltool
-
       - name: 🔨 build solution
-        working-directory: src/api
+        working-directory: src
         run: |
           dotnet restore
           dotnet build --no-restore
 
       - name: 🧪 run tests
         working-directory: src
-        run: |
-          dotnet test ./Finch.sln --configuration Release --collect "XPlat Code Coverage"
-          reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:./../coverage/api -reporttypes:MarkdownSummaryGithub
-
-      - name: 💾 publish coverage report
-        uses: actions/upload-artifact@v7
-        with:
-          name: CoverageReport
-          path: coverage/api/SummaryGithub.md
+        run: dotnet test --solution ./Finch.sln --configuration Release

@@ -132,5 +132,63 @@ because they materially shape `Program.cs` and the DI composition:
 4. **Currency/percentage formatting?** → **Answer**: sensible defaults — £ with thousands
    separators and 2dp for money, LTV to 2dp.
 
+### Implementation pass
+
+Built per [`docs/implementation-plan.md`](docs/implementation-plan.md) once Craig confirmed it,
+file-by-file, then verified rather than assumed working:
+
+- Ran `dotnet build`, the interactive app (via piped stdin covering an approval, a general-limit
+  decline, and several invalid-input retries across all three fields), and the full test suite
+  after every meaningful chunk of work — not just at the end.
+- **`dotnet test` failed immediately** with `xunit.v3`/`Microsoft.NET.Test.Sdk` on the .NET 10 SDK:
+  "Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on .NET 10 SDK
+  and later." This wasn't something to guess around — investigated rather than downgrading
+  packages or reaching for `--no-verify`-style shortcuts. Root cause: xUnit v3 runs on the newer
+  Microsoft.Testing.Platform (MTP), not VSTest, and .NET 10's `dotnet test` needs an explicit
+  opt-in. Fixed by adding a [`global.json`](global.json) at the repo root
+  (`{ "test": { "runner": "Microsoft.Testing.Platform" } }`) and switching invocations from
+  positional paths to `dotnet test --solution src/Finch.sln` (the new CLI's required syntax).
+  Confirmed by re-running the full suite (79 tests) after the fix, not just reading that it looked
+  right.
+- This same issue would have silently broken **CI** — `.github/workflows/build-and-test.yml` ran
+  `dotnet test ./Finch.sln --configuration Release --collect "XPlat Code Coverage"` (positional
+  path, VSTest's `--collect` coverage flag). It also had an unrelated pre-existing bug: the build
+  step's `working-directory: src/api` doesn't exist (the solution lives in `src/`). Both were fixed
+  ­- the working directory corrected, and the test step updated to `dotnet test --solution
+  ./Finch.sln --configuration Release`. Coverage collection (`coverlet.collector` +
+  `reportgenerator`) was **removed** rather than patched: `coverlet.collector` integrates via
+  VSTest's data-collector mechanism, which the MTP runner doesn't support - properly restoring
+  coverage would mean adding `Microsoft.Testing.Extensions.CodeCoverage` and re-plumbing the
+  report-generation step, which is out of scope for a 1-hour tech test's CI polish. Flagged here
+  rather than silently dropped.
+- `dotnet format --verify-no-changes` (also CI-enforced, in `dotnet-linting.yml`) initially failed
+  across every new file on two rules from this repo's `.editorconfig`: `insert_final_newline =
+  false` (every new file had a trailing newline) and C# import ordering (`System.*` usings must
+  sort with the rest, not last). Fixed by running `dotnet format` and re-verifying, rather than
+  hand-editing each file.
+- One early implementation mistake caught before it shipped: the first draft of
+  `ConsoleLoanApplicationReader` used a generic `FieldParseResult<TValue>` record struct referenced
+  as a bare, non-generic `FieldParseResult.Ok(value)` - which doesn't compile in C# (a generic
+  type's static members need type arguments; there's no bare-name inference the way there is for a
+  method-level generic like `Tuple.Create`). Simplified to two non-generic methods
+  (`ReadDecimalField`/`ReadIntField`) instead of chasing the generic-inference pattern further,
+  since there are only ever three fields to read.
+
+### Test file convention (retrofit)
+
+After the first implementation pass (all 79 tests passing, flat `ClassNameTests` files with plain
+`[Fact]`/`[Theory]` methods), Craig specified a house convention that should have been given up
+front: each test class is `static class ClassNameTests`, with an optional nested
+`abstract class ClassNameTestsBase` for shared setup, and one nested `class MethodName : ...Base`
+per method under test, containing `Should<Description>_When<Condition>` methods. Every test file
+was rewritten to this shape (nested `IsApplicableTo`/`IsSatisfiedBy`/`Evaluate`/`Record` classes,
+etc.), rebuilt, reformatted, and re-run - same 79 tests, same coverage, new shape.
+
+One deliberate deviation, called out rather than silently "matched": the integration tests' base
+class (`LendingPlatformIntegrationTestsBase`) needs real setup logic (building the DI container,
+resolving services) that doesn't fit as a primary-constructor one-liner the way the unit test bases
+do (which just need `new()` for a specification/validator). It uses a normal constructor body
+instead of the `ClassNameTestsBase()` primary-constructor shape used everywhere else.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.
