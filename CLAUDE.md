@@ -225,5 +225,30 @@ Boundary tests for this were written as plain `[Fact]`s with in-source `decimal`
 digits, beyond `double`'s ~15-17 digit precision) that round-trip risked landing a hair off the
 intended boundary and making the test flaky in a way that wouldn't be obvious from reading it.
 
+### Bug fix: infinite loop on piped/redirected EOF
+
+Craig caught this by inspection, not by running anything: `ConsoleLoanApplicationReader`'s field-
+reading loops treated `Console.ReadLine()` returning `null` (EOF - stdin closed, as happens when
+piped input runs out) identically to unparseable text - print "Enter a valid number." and read
+again. But a closed stdin keeps returning `null` forever, so the loop never terminates short of
+killing the process. `ShouldReadAnotherApplication` already handled the same `null` case correctly
+via `?.Trim()`; the field readers didn't.
+
+This directly undermined the piped-stdin verification approach used throughout this log and
+described in the README, and would hang any script or CI step that drives the app non-interactively
+with a finite input file.
+
+Fixed by making EOF a distinct, handled case: `ReadDecimalField`/`ReadIntField` now check `raw is
+null` before attempting to parse, print a one-time "No more input received" message, and return
+`null` (hence `decimal?`/`int?`) instead of looping; `ReadApplication()` (now
+`LoanApplicationRequest?`) returns `null` as soon as any field hits EOF, rather than trying to
+assemble a request from incomplete data; `Program.cs` breaks its loop on a `null` request the same
+way it already relied on `ShouldReadAnotherApplication` returning `false`.
+
+Verified directly rather than assumed fixed: re-ran the exact repro (`echo "100000" | dotnet run
+...`), confirmed exit code 0 instead of a hang, then also checked EOF on the very first prompt and
+EOF immediately after a completed application (the pre-existing correct path) to make sure nothing
+regressed.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.

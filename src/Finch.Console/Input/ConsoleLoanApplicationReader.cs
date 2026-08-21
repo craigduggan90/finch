@@ -12,13 +12,26 @@ namespace Finch.Console.Input;
 /// </summary>
 public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validator, IConsoleWriter writer)
 {
-    public LoanApplicationRequest ReadApplication()
+    /// <summary>
+    /// Prompts for a full application. Returns null if input ends (e.g. EOF on piped/redirected
+    /// stdin) before all three fields are answered - there's no valid application to return, and
+    /// nothing left to read, so the caller should stop rather than loop forever.
+    /// </summary>
+    public LoanApplicationRequest? ReadApplication()
     {
         var loanAmount = ReadDecimalField("Loan amount (GBP): ", validator.ValidateLoanAmount);
-        var assetValue = ReadDecimalField("Asset value (GBP): ", validator.ValidateAssetValue);
-        var creditScore = ReadIntField("Applicant credit score (1-999): ", validator.ValidateCreditScore);
+        if (loanAmount is null)
+            return null;
 
-        return new LoanApplicationRequest(loanAmount, assetValue, creditScore);
+        var assetValue = ReadDecimalField("Asset value (GBP): ", validator.ValidateAssetValue);
+        if (assetValue is null)
+            return null;
+
+        var creditScore = ReadIntField("Applicant credit score (1-999): ", validator.ValidateCreditScore);
+        if (creditScore is null)
+            return null;
+
+        return new LoanApplicationRequest(loanAmount.Value, assetValue.Value, creditScore.Value);
     }
 
     public bool ShouldReadAnotherApplication()
@@ -29,12 +42,19 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
                || string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase);
     }
 
-    private decimal ReadDecimalField(string prompt, Func<decimal, FieldValidationResult> validate)
+    private decimal? ReadDecimalField(string prompt, Func<decimal, FieldValidationResult> validate)
     {
         while (true)
         {
             writer.Write(prompt);
             var raw = System.Console.ReadLine();
+
+            if (raw is null)
+            {
+                writer.WriteLine();
+                writer.WriteLine("No more input received - ending session.");
+                return null;
+            }
 
             if (!decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value))
             {
@@ -53,12 +73,19 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
         }
     }
 
-    private int ReadIntField(string prompt, Func<int, FieldValidationResult> validate)
+    private int? ReadIntField(string prompt, Func<int, FieldValidationResult> validate)
     {
         while (true)
         {
             writer.Write(prompt);
             var raw = System.Console.ReadLine();
+
+            if (raw is null)
+            {
+                writer.WriteLine();
+                writer.WriteLine("No more input received - ending session.");
+                return null;
+            }
 
             if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
             {

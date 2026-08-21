@@ -17,6 +17,9 @@ var presenter = provider.GetRequiredService<ApplicationResultPresenter>();
 do
 {
     var request = reader.ReadApplication();
+    if (request is null)
+        break;
+
     var application = LoanApplication.FromRequest(request);
     var decision = rulesEngine.Evaluate(application);
 
