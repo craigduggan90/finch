@@ -1,0 +1,28 @@
+name: Build and Test
+on:
+  - push
+
+jobs:
+  build-and-test:
+    name: build and test project
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📩 checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ⚙️ setup dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 🔨 build solution
+        working-directory: src
+        run: |
+          dotnet restore
+          dotnet build --no-restore
+
+      - name: 🧪 run tests
+        working-directory: src
+        run: dotnet test --solution ./Finch.sln --configuration Release

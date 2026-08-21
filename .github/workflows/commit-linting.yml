@@ -1,0 +1,33 @@
+name: Enforce Commit Format
+on: 
+  - push
+  - pull_request
+
+jobs:
+  commit-lint:
+    name: commit linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📩 checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ⚙️ prepare environment
+        run: |
+          sudo apt install -y git curl
+          curl -sL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y nodejs
+
+      - name: 🏗️ install commitlint
+        run: |
+          npm install conventional-changelog-conventionalcommits
+          npm install commitlint@latest
+
+      - name: 🧪 validate last commit
+        if: github.event_name == 'push'
+        run: npx commitlint --from HEAD~1 --to HEAD --verbose
+
+      - name: 🧪 validate pull request commits
+        if: github.event_name == 'pull_request'
+        run: npx commitlint --from ${{ github.event.pull_request.head.sha }}~${{ github.event.pull_request.commits }} --to ${{ github.event.pull_request.head.sha }} --verbose
