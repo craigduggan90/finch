@@ -60,7 +60,10 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   See **AI collaboration log** — this replaced an earlier design.
 - **Specification pattern**: `ISpecification<LoanApplication>` with `IsApplicableTo`,
   `IsSatisfiedBy`, `Description`, and `Order`. Each of the 8 rules above is its own class — no
-  combined/compound rules. All implementations are registered in DI and injected into a
+  combined/compound rules. Implementations aren't registered by hand: `AddLendingPlatform` reflects
+  over the assembly (`RegisterImplementationsOf<TInterface>`) and registers every public,
+  non-abstract type assignable to `ISpecification<LoanApplication>` automatically, so adding a new
+  rule class is enough - no DI registration line to remember. All of them are injected into a
   `RulesEngine` as `IEnumerable<ISpecification<LoanApplication>>`; the engine sorts by `Order`
   (matching the table's numbering, 1–8) before evaluating, so evaluation order — and therefore
   which reason is returned on decline — is a stable, explicit contract rather than an accident of
@@ -96,15 +99,15 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   ("whack-a-mole"). The likely fix: run every rule regardless of earlier failures and return an
   array of failure reasons instead of a single string - noted here as a direction, not built, since
   it changes `LoanDecision`'s shape and every caller of it.
-- **Nothing enforces `Order` uniqueness.** Each `ISpecification<T>` declares an explicit `Order`,
-  and `RulesEngine` sorts by it before evaluating, which is a real improvement over trusting DI
-  registration order (see AI log below) - but two specifications could still declare the same
-  `Order` today, and nothing would catch it at compile time, at DI registration, or at
-  `RulesEngine` construction. LINQ's `OrderBy` is a stable sort, so ties would silently fall back
-  to enumeration order (in practice, DI registration order) - quietly reintroducing the exact
-  problem `Order` was added to close. One to look into, not fixed now: e.g. a debug-time assertion
-  in `RulesEngine`'s constructor that rejects duplicate `Order` values across the injected
-  specifications.
+- **Nothing enforces `Order` uniqueness.** Each `ISpecification<T>` declares an explicit `Order`
+  (its doc comment says it should be unique, but says so only in a comment), and `RulesEngine`
+  sorts by it before evaluating, which is a real improvement over trusting DI registration order
+  (see AI log below) - but two specifications could still declare the same `Order` today, and
+  nothing would catch it at compile time, at registration, or at `RulesEngine` construction. LINQ's
+  `OrderBy` is a stable sort, so ties would silently fall back to enumeration order - quietly
+  reintroducing the exact problem `Order` was added to close. We *could* have `RulesEngine`'s
+  constructor group the injected specifications by `Order` and throw if any group has more than
+  one member - deliberately not done yet, not because it's hard, just not needed until it bites.
 - **Synchronous rule evaluation**: fine today since there's no I/O per rule. If rules ever need to
   call out to a credit bureau, fraud service, etc., `ISpecification` and `RulesEngine` would need
   async variants.
@@ -116,8 +119,16 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   trail of every decision (inputs, which rules ran, which passed/failed, final outcome) independent
   of the console output shown to the user.
 - **Console UX for invalid input**: invalid input triggers an immediate re-prompt of just that
-  field, in a loop, with no way to cancel an in-progress application short of killing the process.
-  This is an accepted limitation of a plain console app without a TUI library.
+  field, in a loop. EOF (`Ctrl+D`/`Ctrl+Z`) at any prompt ends the session cleanly rather than
+  requiring the process to be killed - see the AI log's EOF-handling entries. What's still missing:
+  there's no way to abandon just the *current* in-progress application and start a fresh one
+  without ending the whole session - EOF quits outright, it doesn't offer a "cancel this one and
+  retry" option. This is an accepted limitation of a plain console app without a TUI library.
+- **`FakeConsoleWriter` is duplicated, not shared.** It exists identically in both
+  `Finch.Console.UnitTests/Fakes` and `Finch.Console.IntegrationTests/Fakes` (see AI log). Craig
+  doesn't want a dependency between the two test projects, and a third shared-test-utilities
+  project isn't worth it for one ~10-line class today. Noted here deliberately rather than acted
+  on - if more shared test doubles show up later, that's the point to revisit extracting one.
 
 ## AI collaboration log
 
@@ -441,6 +452,41 @@ during each of the three fields and at the "another application?" prompt, assert
 returned value (`null`/`false`) and that the right message was written. Verified the real DI-wired
 app still behaves identically end-to-end afterward, not just that the new unit tests passed in
 isolation.
+
+### Correction: stale "no way to cancel" claim in Future considerations
+
+Craig caught that the "Console UX for invalid input" bullet still claimed there was "no way to
+cancel an in-progress application short of killing the process" - true when it was written, but
+made false by the EOF/Ctrl+D handling added later in this same log. Doc-only fix: updated the
+bullet to reflect that EOF now ends the session cleanly, and narrowed the actual remaining gap to
+what's still true - there's no way to abandon just the *current* application and start a new one
+without ending the whole session outright.
+
+### Noted, not fixed: `FakeConsoleWriter` duplication across test projects
+
+When `IConsoleReader` was added, `FakeConsoleWriter` got duplicated into
+`Finch.Console.UnitTests/Fakes` rather than reused from `Finch.Console.IntegrationTests/Fakes`,
+since unit tests don't (and per Craig, shouldn't) reference the integration test project. Craig
+confirmed the trade-off explicitly rather than letting it sit as an unstated assumption: no
+cross-test-project dependency, and a dedicated shared-test-utilities project isn't worth it yet for
+one tiny class. Recorded as a future consideration instead of resolved now.
+
+### Simplification: auto-register `ISpecification<T>` implementations by reflection
+
+Craig found hand-registering all 8 rules in `AddLendingPlatform` a nuisance and supplied the
+replacement directly: a `RegisterImplementationsOf<TInterface>` helper that scans
+`typeof(TInterface).Assembly` for every public, non-abstract type assignable to `TInterface` and
+registers each as a singleton. Adopted as given - `typeof(TInterface).IsAssignableFrom(type)` works
+correctly against a *closed* generic interface like `ISpecification<LoanApplication>` (nothing here
+is an open generic type needing special-case handling), and every specification class already lived
+in the same assembly as the interface, so no assembly-selection logic was needed beyond
+`typeof(TInterface).Assembly`.
+
+Net effect: adding a new rule class is now enough on its own - there's no DI registration line to
+remember or forget. Verified rather than assumed: ran the full suite (100/100, including the
+integration tests that build the real container and exercise all 8 rules end-to-end) and manually
+drove the running app through a high-value and a low-value-band case to confirm reflection
+discovered every rule at actual runtime, not just under test.
 
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.

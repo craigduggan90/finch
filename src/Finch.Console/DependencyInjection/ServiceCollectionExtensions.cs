@@ -2,7 +2,6 @@ using Finch.Console.Domain;
 using Finch.Console.Input;
 using Finch.Console.Output;
 using Finch.Console.Rules;
-using Finch.Console.Rules.Specifications;
 using Finch.Console.Statistics;
 using Finch.Console.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,20 +11,15 @@ namespace Finch.Console.DependencyInjection;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers every component of the lending platform. Registration order below is purely
-    /// cosmetic (matches the rule table in CLAUDE.md) - <see cref="RulesEngine"/> sorts by each
-    /// rule's <see cref="ISpecification{T}.Order"/>, so evaluation order doesn't depend on it.
+    /// Registers every component of the lending platform. Every public, non-abstract
+    /// <see cref="ISpecification{T}"/> implementation in this assembly is registered automatically
+    /// - see <see cref="RegisterImplementationsOf{TInterface}"/> - so adding a new rule class is
+    /// enough; nothing here needs updating. Registration order is irrelevant regardless:
+    /// <see cref="RulesEngine"/> sorts by each rule's <see cref="ISpecification{T}.Order"/>.
     /// </summary>
     public static IServiceCollection AddLendingPlatform(this IServiceCollection services)
     {
-        services.AddSingleton<ISpecification<LoanApplication>, MinimumLoanAmountSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, MaximumLoanAmountSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, HighValueLtvSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, HighValueCreditScoreSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, LowValueMaximumLtvSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, LowValueLtvBand1CreditScoreSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, LowValueLtvBand2CreditScoreSpecification>();
-        services.AddSingleton<ISpecification<LoanApplication>, LowValueLtvBand3CreditScoreSpecification>();
+        RegisterImplementationsOf<ISpecification<LoanApplication>>(services);
 
         services.AddSingleton<RulesEngine>();
         services.AddSingleton<LoanApplicationFieldValidator>();
@@ -36,5 +30,16 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ConsoleLoanApplicationReader>();
 
         return services;
+    }
+
+    private static void RegisterImplementationsOf<TInterface>(IServiceCollection services)
+    {
+        var implementations = typeof(TInterface).Assembly
+            .GetTypes()
+            .Where(type => type is { IsInterface: false, IsAbstract: false, IsPublic: true }
+                           && typeof(TInterface).IsAssignableFrom(type));
+
+        foreach (var implementation in implementations)
+            services.AddSingleton(typeof(TInterface), implementation);
     }
 }

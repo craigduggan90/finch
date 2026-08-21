@@ -5,6 +5,7 @@ public interface ISpecification<T>
     /// <summary>
     /// Determines this rule's position in evaluation order (ascending) within <see cref="Rules.RulesEngine"/>,
     /// independent of DI registration order - so evaluation order is an explicit, stable contract.
+    /// Should be unique across all registered specifications — <see cref="RulesEngine"/> does not enforce this.
     /// </summary>
     int Order { get; }
 
