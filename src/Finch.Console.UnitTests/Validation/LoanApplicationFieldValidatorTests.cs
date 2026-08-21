@@ -15,7 +15,8 @@ public static class LoanApplicationFieldValidatorTests
         [InlineData(0)]
         [InlineData(-1)]
         [InlineData(-0.01)]
-        public void ShouldBeInvalid_WhenLoanAmountIsZeroOrNegative(decimal loanAmount)
+        [InlineData(0.005)]
+        public void ShouldBeInvalid_WhenLoanAmountIsBelowOnePenny(decimal loanAmount)
         {
             var result = Validator.ValidateLoanAmount(loanAmount);
 
@@ -27,7 +28,7 @@ public static class LoanApplicationFieldValidatorTests
         [InlineData(0.01)]
         [InlineData(1)]
         [InlineData(100_000)]
-        public void ShouldBeValid_WhenLoanAmountIsGreaterThanZero(decimal loanAmount)
+        public void ShouldBeValid_WhenLoanAmountIsAtLeastOnePenny(decimal loanAmount)
         {
             var result = Validator.ValidateLoanAmount(loanAmount);
 
@@ -38,18 +39,18 @@ public static class LoanApplicationFieldValidatorTests
         [Fact]
         public void ShouldBeValid_WhenLoanAmountIsExactlyTheMaximum()
         {
-            // Written as a decimal literal, not [InlineData], so there's no double round-trip at
-            // this magnitude to lose precision on the boundary.
-            var result = Validator.ValidateLoanAmount(999_999_999_999_999.99m);
+            // The maximum is decimal.MaxValue / 10,000 (see LoanApplicationFieldValidator) -
+            // computed the same way here rather than duplicating it as a magic literal.
+            var result = Validator.ValidateLoanAmount(decimal.MaxValue / 10_000m);
 
             Assert.True(result.IsValid);
             Assert.Null(result.ErrorMessage);
         }
 
         [Fact]
-        public void ShouldBeInvalid_WhenLoanAmountIsOneCentAboveTheMaximum()
+        public void ShouldBeInvalid_WhenLoanAmountIsAboveTheMaximum()
         {
-            var result = Validator.ValidateLoanAmount(1_000_000_000_000_000.00m);
+            var result = Validator.ValidateLoanAmount((decimal.MaxValue / 10_000m) + 1m);
 
             Assert.False(result.IsValid);
             Assert.NotNull(result.ErrorMessage);
@@ -62,7 +63,8 @@ public static class LoanApplicationFieldValidatorTests
         [InlineData(0)]
         [InlineData(-1)]
         [InlineData(-0.01)]
-        public void ShouldBeInvalid_WhenAssetValueIsZeroOrNegative(decimal assetValue)
+        [InlineData(0.005)]
+        public void ShouldBeInvalid_WhenAssetValueIsBelowOnePenny(decimal assetValue)
         {
             var result = Validator.ValidateAssetValue(assetValue);
 
@@ -74,7 +76,7 @@ public static class LoanApplicationFieldValidatorTests
         [InlineData(0.01)]
         [InlineData(1)]
         [InlineData(500_000)]
-        public void ShouldBeValid_WhenAssetValueIsGreaterThanZero(decimal assetValue)
+        public void ShouldBeValid_WhenAssetValueIsAtLeastOnePenny(decimal assetValue)
         {
             var result = Validator.ValidateAssetValue(assetValue);
 
@@ -83,21 +85,14 @@ public static class LoanApplicationFieldValidatorTests
         }
 
         [Fact]
-        public void ShouldBeValid_WhenAssetValueIsExactlyTheMaximum()
+        public void ShouldBeValid_WhenAssetValueHasNoUpperBound()
         {
-            var result = Validator.ValidateAssetValue(999_999_999_999_999.99m);
+            // Unlike loan amount, asset value has no ceiling: a large asset value only shrinks
+            // LoanToValue toward zero, it can never make it (or anything downstream) overflow.
+            var result = Validator.ValidateAssetValue(1_000_000_000_000_000.00m);
 
             Assert.True(result.IsValid);
             Assert.Null(result.ErrorMessage);
-        }
-
-        [Fact]
-        public void ShouldBeInvalid_WhenAssetValueIsOneCentAboveTheMaximum()
-        {
-            var result = Validator.ValidateAssetValue(1_000_000_000_000_000.00m);
-
-            Assert.False(result.IsValid);
-            Assert.NotNull(result.ErrorMessage);
         }
     }
 

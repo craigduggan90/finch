@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<RulesEngine>();
         services.AddSingleton<LoanApplicationFieldValidator>();
         services.AddSingleton<LoanApplicationStatistics>();
+        services.AddSingleton<IConsoleReader, SystemConsoleReader>();
         services.AddSingleton<IConsoleWriter, SystemConsoleWriter>();
         services.AddSingleton<ApplicationResultPresenter>();
         services.AddSingleton<ConsoleLoanApplicationReader>();

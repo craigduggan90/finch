@@ -51,14 +51,13 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
 
 ## Architecture
 
-- **Domain records**: `LoanApplicationRequest` (raw, pre-validated user input) →
-  `LoanApplication` (domain object with a computed `LoanToValue` property). Kept as two distinct
-  types so the domain object can assume valid, non-zero `AssetValue` (no div-by-zero guard needed
-  once you're holding a `LoanApplication`).
+- **Domain record**: a single `LoanApplication` (`LoanAmount`, `AssetValue`, `CreditScore`, plus a
+  computed `LoanToValue`). There's no separate "raw request" type - see **AI collaboration log**
+  for why an earlier two-type split was removed.
 - **Field-level validation, not a batch validator**: each input field is validated (and
   re-prompted on failure) at the point of console input, one field at a time, rather than
-  constructing a whole `LoanApplicationRequest` and validating it afterwards with a dictionary of
-  errors. See **AI collaboration log** — this replaced an earlier design.
+  constructing a whole request object and validating it afterwards with a dictionary of errors.
+  See **AI collaboration log** — this replaced an earlier design.
 - **Specification pattern**: `ISpecification<LoanApplication>` with `IsApplicableTo`,
   `IsSatisfiedBy`, `Description`, and `Order`. Each of the 8 rules above is its own class — no
   combined/compound rules. All implementations are registered in DI and injected into a
@@ -66,19 +65,25 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   (matching the table's numbering, 1–8) before evaluating, so evaluation order — and therefore
   which reason is returned on decline — is a stable, explicit contract rather than an accident of
   DI registration order.
-- **Single console writer**: exactly one class is allowed to call `System.Console.Write*` — an
-  `IConsoleWriter` implementation, injected everywhere output happens. This is what integration
-  tests swap out (analogous to `FakeLogger` for `ILogger`) to assert on printed output without
-  touching the real console. `System.Console.ReadLine` (input) is not subject to this constraint —
-  it isn't part of what tests assert on, so the interactive reader calls it directly.
+- **Single console writer, single console reader**: exactly one class is allowed to call
+  `System.Console.Write*` (`SystemConsoleWriter`, behind `IConsoleWriter`), and exactly one is
+  allowed to call `System.Console.ReadLine` (`SystemConsoleReader`, behind `IConsoleReader`). Both
+  are injected everywhere they're needed. This is what tests swap out (analogous to `FakeLogger` for
+  `ILogger`) to drive `ConsoleLoanApplicationReader` with a scripted sequence of input - including
+  EOF partway through - and assert on printed output, without touching the real console. See the AI
+  log for when the reader side of this was added; it wasn't there from the start.
   - `ILogger` was deliberately **not** used for this output — routing decision/stats output through
     a logging abstraction would muddy the console output with log-level formatting, and there's no
     other sink to justify it right now.
 - **DI container**: `Microsoft.Extensions.DependencyInjection`. `Program.cs` is the composition
   root. Integration tests build the same container (the real rule collection, resolved for real)
   and substitute only the `IConsoleWriter`.
-- **Synchronous only**: nothing here needs `async`/`await` — no I/O beyond console and no
-  persistence. See Future considerations.
+- **Synchronous only**: nothing in the domain/business logic needs `async`/`await` — no I/O beyond
+  console and no persistence. See Future considerations. The one `await` in the codebase,
+  `await using var provider = services.BuildServiceProvider();` in `Program.cs`, is DI container
+  lifecycle plumbing (proper async disposal of the `ServiceProvider`, not business logic) and isn't
+  a violation of this - flagging it here since automated PR reviewers keep raising it as if it were.
+  `ISpecification`, `RulesEngine`, validation, and statistics remain entirely synchronous.
 
 ## Future considerations (out of scope for the 1h timebox)
 
@@ -88,10 +93,18 @@ shown is the **first** rule (in evaluation order) that failed — see Future con
   shared metadata (a category tag, a severity, an owner).
 - **Only the first failure is surfaced.** Because decline reasons are "first failing rule in
   evaluation order," fixing one problem in a UI/API consumer could just reveal the next one
-  ("whack-a-mole"). A production version should probably surface *all* failing rules at once.
-  Evaluation order itself is no longer the risk here - each `ISpecification<T>` declares an
-  explicit `Order`, and `RulesEngine` sorts by it before evaluating, so which reason comes back
-  first is a stable, tested contract independent of DI registration order (see AI log below).
+  ("whack-a-mole"). The likely fix: run every rule regardless of earlier failures and return an
+  array of failure reasons instead of a single string - noted here as a direction, not built, since
+  it changes `LoanDecision`'s shape and every caller of it.
+- **Nothing enforces `Order` uniqueness.** Each `ISpecification<T>` declares an explicit `Order`,
+  and `RulesEngine` sorts by it before evaluating, which is a real improvement over trusting DI
+  registration order (see AI log below) - but two specifications could still declare the same
+  `Order` today, and nothing would catch it at compile time, at DI registration, or at
+  `RulesEngine` construction. LINQ's `OrderBy` is a stable sort, so ties would silently fall back
+  to enumeration order (in practice, DI registration order) - quietly reintroducing the exact
+  problem `Order` was added to close. One to look into, not fixed now: e.g. a debug-time assertion
+  in `RulesEngine`'s constructor that rejects duplicate `Order` values across the injected
+  specifications.
 - **Synchronous rule evaluation**: fine today since there's no I/O per rule. If rules ever need to
   call out to a credit bureau, fraud service, etc., `ISpecification` and `RulesEngine` would need
   async variants.
@@ -236,7 +249,9 @@ via `?.Trim()`; the field readers didn't.
 
 This directly undermined the piped-stdin verification approach used throughout this log and
 described in the README, and would hang any script or CI step that drives the app non-interactively
-with a finite input file.
+with a finite input file. It's also reachable interactively, not just via piping: a user can send
+the same EOF at any prompt with `Ctrl+D` (macOS/Linux) or `Ctrl+Z`+`Enter` (Windows) - documented in
+the README as a normal way to end a session, not just a CI/scripting concern.
 
 Fixed by making EOF a distinct, handled case: `ReadDecimalField`/`ReadIntField` now check `raw is
 null` before attempting to parse, print a one-time "No more input received" message, and return
@@ -287,6 +302,145 @@ in different classes, but not the same *constant* being copy-pasted (different n
 role, no shared source of truth to extract without coupling two classes' band edges together in a
 way that wasn't asked for). Flagging this distinction rather than silently going further than the
 request.
+
+### Simplification: merged `LoanApplicationRequest` into `LoanApplication`
+
+Craig asked whether the `LoanApplicationRequest` → `LoanApplication` split was still needed. It
+wasn't: the split's only reason to exist was so `LoanApplication` could assume a non-zero
+`AssetValue` without a div-by-zero guard, which mattered when a *batch* validator was going to
+construct a request and validate it afterwards. That design was replaced early on (see "AI
+collaboration log" further up) with field-level validation that happens *before* any object is
+assembled - so by the time either type could be constructed, every field is already guaranteed
+valid. Once that pivot happened, the two-type split stopped doing anything; it just wasn't cleaned
+up until asked about directly.
+
+Removed `LoanApplicationRequest.cs` and `LoanApplication.FromRequest` entirely.
+`ConsoleLoanApplicationReader.ReadApplication()` now builds and returns `LoanApplication?` directly,
+and `Program.cs`/tests were updated accordingly. Also dropped `LoanApplication`'s XML doc comment
+(the "mapped from a validated request, assumes AssetValue > 0" text no longer described anything
+that exists) - the record's field names already say what it is, and the div-by-zero-safety
+invariant is still true, just no longer worth a comment now there's no second type to contrast it
+against.
+
+### Clarification: `await using` on the container isn't a sync violation
+
+Automated PR reviewers kept flagging `await using var provider = services.BuildServiceProvider();`
+in `Program.cs` against the "synchronous only" design note. Clarified in the Architecture section:
+that line is DI container disposal plumbing, not business logic going async - `ISpecification`,
+`RulesEngine`, validation, and statistics are still entirely synchronous. No code changed, only the
+doc, to give automated reviewers (and future readers) the context to stop flagging it.
+
+### Bug fix: silent exit on EOF at the "another application?" prompt
+
+Craig noticed the EOF fix didn't cover every prompt: `ShouldReadAnotherApplication` treated a
+`null` `Console.ReadLine()` result as just another "no", trimming it via `?.Trim()` and comparing
+against `y`/`yes` - which correctly stopped the loop, but printed nothing, leaving a user who hit
+EOF here (as opposed to mid-field) with no explanation for why the session ended. Fixed by giving
+it the same explicit `null` check and "No more input received" message as the field readers, rather
+than relying on it happening to fail the y/n comparison silently.
+
+While doing this, extracted the repeated message-printing into a `WriteEndOfInputMessage()` helper
+shared by `ReadField<T>` and `ShouldReadAnotherApplication`, instead of duplicating the literal
+string in both places.
+
+### Simplification: extracted `TryParseDecimal`
+
+Craig caught this mid-edit: `ReadApplication()`'s loan amount and asset value calls to `ReadField`
+passed identical inline `raw => decimal.TryParse(...) ? value : null` lambdas - copy-pasted, not
+just similar. Extracted a `private static decimal? TryParseDecimal(string raw)` local method and
+pointed both call sites at it. The credit score call keeps its own inline `int.TryParse` lambda,
+since it's the only place that needs it - nothing to extract there.
+
+### Noted, not fixed: `Order` has no uniqueness guarantee
+
+Craig flagged that nothing stops two specifications from declaring the same `Order` - ties would
+silently fall back to a stable-sort tiebreak on enumeration order, which is the exact DI-ordering
+fragility `Order` exists to remove. Explicitly deferred rather than fixed: Craig's own likely fix
+is broader than a uniqueness check - running every rule regardless of earlier failures and
+returning an array of reasons instead of a single first-match string - so a narrow "reject
+duplicate Order" guard now would be solving a smaller problem than the one actually worth solving
+later. Documented as a future consideration in the Architecture section rather than built.
+
+### Change request: minimum currency amount is £0.01, not "greater than zero"
+
+Craig pointed out that `> 0` was the wrong lower bound for currency fields - it let sub-penny
+fractional values like `0.005` through, which isn't a real GBP amount. Changed
+`ValidateLoanAmount`/`ValidateAssetValue` from `<= 0` to `< 0.01m`, which rejects zero, negative
+values, and fractional pennies alike, with the error message updated to "must be at least £0.01."
+Added a test case for a sub-penny value (`0.005`) to both fields' invalid-input theories, since the
+old test suite only exercised whole-zero and negative boundaries - it would have missed this gap
+entirely.
+
+### Change request: revert the specification base class to a plain constants holder
+
+Craig reconsidered the `HighValueThresholdSpecification` base class from earlier in this log: it
+existed purely to share one constant, but inheritance implies shared *behaviour* to a reader, not
+just a shared value - misleading for anyone skimming the six classes that "inherit" it. Reverted:
+deleted the base class, added `RuleThresholds` (a plain `public static class` holding `const decimal
+HighValueThreshold`), and had the six specifications reference `RuleThresholds.HighValueThreshold`
+directly instead of inheriting it. Each of those six classes is back to only implementing
+`ISpecification<LoanApplication>`, nothing else in its base list.
+
+### Change requests: asset value ceiling removed, loan amount ceiling now derived
+
+Two related corrections in the same breath. First, Craig pointed out the asset-value upper bound
+was pointless now that asset value has a sane minimum (0.01): `LoanToValue = (LoanAmount /
+AssetValue) * 100` only gets *smaller* as asset value grows, so a large asset value was never an
+overflow risk - the ceiling on it was solving a problem that didn't exist. Removed it; asset value
+now only has a floor.
+
+Second, Craig asked for the loan amount ceiling itself to stop being a magic number
+(`999_999_999_999_999.99m`, chosen somewhat arbitrarily as "1 quadrillion minus a penny") and
+instead be *derived*: `decimal.MaxValue / 10_000m`. The reasoning ties the two changes together -
+`LoanToValue` is `LoanAmount * (100 / AssetValue)`, and since asset value's floor is `0.01`, the
+worst-case multiplier is `100 / 0.01 = 10,000`. Capping loan amount at `decimal.MaxValue / 10,000`
+guarantees that multiplication can't overflow `decimal`, even at that worst case - a real derivation
+instead of a round-sounding literal. Also switched the "loan amount too large" error message from
+spelling out that ugly derived number (`£79,228,162,514,264,337,593,543,950.03...`-ish) to a plain
+"Loan amount is too large." - the exact figure was never meant to be user-facing.
+
+Tests updated to match: the loan-amount boundary tests now compute `decimal.MaxValue / 10_000m`
+themselves rather than duplicating a literal, and the asset-value tests replace the old ceiling
+boundary pair with a single test proving a very large asset value is still valid.
+
+### Simplification: made `ValidateCreditScore` consistent with `ValidateLoanAmount`
+
+Craig pointed out `ValidateLoanAmount` (a `switch` expression, two distinct branches) and
+`ValidateCreditScore` (a ternary over `creditScore is >= 1 and <= 999`, one combined message for
+either direction) had drifted into two different styles for the same shape of problem - and the
+switch form has a real advantage, not just consistency: it can tell "too low" apart from "too high"
+in the message. Converted `ValidateCreditScore` to the same `switch` shape, splitting "Credit score
+must be between 1 and 999." into "must be at least 1." / "must not exceed 999.". `ValidateAssetValue`
+was left as a ternary - it only has one condition (a floor, no ceiling, per the earlier change), so
+there's nothing for a switch to add there. Existing tests didn't assert exact message text, so they
+kept passing unchanged; verified the new messages manually via the running app regardless, rather
+than trusting that a passing test suite meant the visible behaviour was right.
+
+### Change request: cover the EOF/Ctrl+D logic that coverage flagged as untested
+
+Craig ran coverage and noticed the EOF-handling work from earlier in this log - a real bug fix, not
+throwaway plumbing - had zero test coverage, and asked (rhetorically - "it's like a PR comment,
+I'm asking, but really I'm telling") whether it should be. Agreed it should: this was exactly the
+code that had a real infinite-loop bug in it, so "thin wrapper, not worth testing" (the original
+scoping call in the implementation plan) no longer held once that history existed.
+
+Closed the gap by mirroring the existing `IConsoleWriter` pattern on the input side: added
+`IConsoleReader` (one method, `ReadLine()`) and `SystemConsoleReader` (the sole class now permitted
+to call `System.Console.ReadLine`), and changed `ConsoleLoanApplicationReader` to depend on
+`IConsoleReader` instead of calling `System.Console.ReadLine()` directly. Registered it in
+`AddLendingPlatform` alongside the writer.
+
+Added `Finch.Console.UnitTests/Fakes/FakeConsoleReader` - returns a queued sequence of lines, then
+`null` forever, so a test can simulate EOF at any exact point just by how many lines it queues up.
+Duplicated `FakeConsoleWriter` into the unit tests project too (previously only in
+`IntegrationTests`) rather than adding a project reference between test projects for one tiny class.
+
+New `ConsoleLoanApplicationReaderTests` (16 tests) covers what had no coverage before: the happy
+path, re-prompting on parse and validation failure, and - the actual point of this exercise - EOF
+during each of the three fields and at the "another application?" prompt, asserting both the
+returned value (`null`/`false`) and that the right message was written. Verified the real DI-wired
+app still behaves identically end-to-end afterward, not just that the new unit tests passed in
+isolation.
 
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.

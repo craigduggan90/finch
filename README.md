@@ -20,7 +20,9 @@ You'll be prompted for each application's **loan amount (GBP)**, **asset value (
 field. After each application, the decision (approved, or declined with a reason) and the running
 totals (applicant counts, total value of loans written, mean LTV across all applications) are
 printed. You'll then be asked whether to submit another application; anything other than `y`/`yes`
-ends the session.
+ends the session. You can also end the session at any prompt by sending EOF - `Ctrl+D` on
+macOS/Linux, `Ctrl+Z` then `Enter` on Windows - which prints "No more input received - ending
+session." and exits cleanly rather than re-prompting forever.
 
 ## Running the tests
 

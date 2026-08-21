@@ -19,19 +19,4 @@ public static class LoanApplicationTests
             Assert.Equal(expectedLtv, application.LoanToValue, precision: 10);
         }
     }
-
-    public class FromRequest
-    {
-        [Fact]
-        public void ShouldMapAllFields_WhenGivenARequest()
-        {
-            var request = new LoanApplicationRequest(LoanAmount: 250_000, AssetValue: 500_000, CreditScore: 800);
-
-            var application = LoanApplication.FromRequest(request);
-
-            Assert.Equal(request.LoanAmount, application.LoanAmount);
-            Assert.Equal(request.AssetValue, application.AssetValue);
-            Assert.Equal(request.CreditScore, application.CreditScore);
-        }
-    }
 }

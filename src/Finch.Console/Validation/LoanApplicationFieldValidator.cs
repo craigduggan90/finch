@@ -6,26 +6,34 @@ namespace Finch.Console.Validation;
 /// </summary>
 public class LoanApplicationFieldValidator
 {
-    // 1 quadrillion minus 0.01 - an upper bound comfortably below decimal's actual range, just to
-    // reject unrealistic input before it reaches arithmetic like LoanApplication.LoanToValue.
-    private const decimal MaximumAmount = 999_999_999_999_999.99m;
+    // A penny - the smallest unit GBP currency actually has, so this is the true minimum rather
+    // than just "greater than zero".
+    private const decimal MinimumAmount = 0.01m;
+
+    // Derived, not arbitrary: LoanToValue computes (LoanAmount / AssetValue) * 100, i.e.
+    // LoanAmount * (100 / AssetValue). Asset value's floor is MinimumAmount (0.01), so the
+    // worst case multiplier is 100 / 0.01 = 10,000. Capping loan amount at decimal.MaxValue /
+    // 10,000 guarantees that multiplication can never overflow decimal, even at that worst case.
+    // Asset value has no ceiling: a large asset value only shrinks LoanToValue toward zero, it
+    // can't grow it - the real guard against a runaway LTV is this cap on the numerator.
+    private const decimal MaximumAmount = decimal.MaxValue / 10_000m;
 
     public FieldValidationResult ValidateLoanAmount(decimal loanAmount) => loanAmount switch
     {
-        <= 0 => FieldValidationResult.Fail("Loan amount must be greater than zero."),
-        > MaximumAmount => FieldValidationResult.Fail("Loan amount must not exceed £999,999,999,999,999.99."),
+        < MinimumAmount => FieldValidationResult.Fail("Loan amount must be at least £0.01."),
+        > MaximumAmount => FieldValidationResult.Fail("Loan amount is too large."),
         _ => FieldValidationResult.Ok(),
     };
 
-    public FieldValidationResult ValidateAssetValue(decimal assetValue) => assetValue switch
+    public FieldValidationResult ValidateAssetValue(decimal assetValue) =>
+        assetValue < MinimumAmount
+            ? FieldValidationResult.Fail("Asset value must be at least £0.01.")
+            : FieldValidationResult.Ok();
+
+    public FieldValidationResult ValidateCreditScore(int creditScore) => creditScore switch
     {
-        <= 0 => FieldValidationResult.Fail("Asset value must be greater than zero."),
-        > MaximumAmount => FieldValidationResult.Fail("Asset value must not exceed £999,999,999,999,999.99."),
+        < 1 => FieldValidationResult.Fail("Credit score must be at least 1."),
+        > 999 => FieldValidationResult.Fail("Credit score must not exceed 999."),
         _ => FieldValidationResult.Ok(),
     };
-
-    public FieldValidationResult ValidateCreditScore(int creditScore) =>
-        creditScore is >= 1 and <= 999
-            ? FieldValidationResult.Ok()
-            : FieldValidationResult.Fail("Credit score must be between 1 and 999.");
 }

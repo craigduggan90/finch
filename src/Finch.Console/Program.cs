@@ -1,5 +1,4 @@
 using Finch.Console.DependencyInjection;
-using Finch.Console.Domain;
 using Finch.Console.Input;
 using Finch.Console.Output;
 using Finch.Console.Rules;
@@ -16,11 +15,10 @@ var presenter = provider.GetRequiredService<ApplicationResultPresenter>();
 
 do
 {
-    var request = reader.ReadApplication();
-    if (request is null)
+    var application = reader.ReadApplication();
+    if (application is null)
         break;
 
-    var application = LoanApplication.FromRequest(request);
     var decision = rulesEngine.Evaluate(application);
 
     statistics.Record(application, decision);

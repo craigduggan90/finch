@@ -7,31 +7,22 @@ namespace Finch.Console.Input;
 
 /// <summary>
 /// Interactively prompts for a loan application, one field at a time, re-prompting the same field
-/// until it passes validation. Reads directly from <see cref="System.Console.ReadLine"/> - reading
-/// input isn't covered by the single-writer constraint, since tests don't assert on it.
+/// until it passes validation.
 /// </summary>
-public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validator, IConsoleWriter writer)
+public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validator, IConsoleReader reader, IConsoleWriter writer)
 {
     /// <summary>
     /// Prompts for a full application. Returns null if input ends (e.g. EOF on piped/redirected
     /// stdin) before all three fields are answered - there's no valid application to return, and
     /// nothing left to read, so the caller should stop rather than loop forever.
     /// </summary>
-    public LoanApplicationRequest? ReadApplication()
+    public LoanApplication? ReadApplication()
     {
-        var loanAmount = ReadField<decimal>(
-            "Loan amount (GBP): ",
-            raw => decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null,
-            "Enter a valid number.",
-            validator.ValidateLoanAmount);
+        var loanAmount = ReadField<decimal>("Loan amount (GBP): ", TryParseDecimal, "Enter a valid number.", validator.ValidateLoanAmount);
         if (loanAmount is null)
             return null;
 
-        var assetValue = ReadField<decimal>(
-            "Asset value (GBP): ",
-            raw => decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null,
-            "Enter a valid number.",
-            validator.ValidateAssetValue);
+        var assetValue = ReadField<decimal>("Asset value (GBP): ", TryParseDecimal, "Enter a valid number.", validator.ValidateAssetValue);
         if (assetValue is null)
             return null;
 
@@ -43,15 +34,23 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
         if (creditScore is null)
             return null;
 
-        return new LoanApplicationRequest(loanAmount.Value, assetValue.Value, creditScore.Value);
+        return new LoanApplication(loanAmount.Value, assetValue.Value, creditScore.Value);
     }
 
     public bool ShouldReadAnotherApplication()
     {
         writer.Write("Submit another application? (y/n): ");
-        var response = System.Console.ReadLine()?.Trim();
-        return string.Equals(response, "y", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase);
+        var response = reader.ReadLine();
+
+        if (response is null)
+        {
+            WriteEndOfInputMessage();
+            return false;
+        }
+
+        var trimmed = response.Trim();
+        return string.Equals(trimmed, "y", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(trimmed, "yes", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -64,12 +63,11 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
         while (true)
         {
             writer.Write(prompt);
-            var raw = System.Console.ReadLine();
+            var raw = reader.ReadLine();
 
             if (raw is null)
             {
-                writer.WriteLine();
-                writer.WriteLine("No more input received - ending session.");
+                WriteEndOfInputMessage();
                 return null;
             }
 
@@ -90,4 +88,13 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
             return parsed.Value;
         }
     }
+
+    private void WriteEndOfInputMessage()
+    {
+        writer.WriteLine();
+        writer.WriteLine("No more input received - ending session.");
+    }
+
+    private static decimal? TryParseDecimal(string raw) =>
+        decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null;
 }
