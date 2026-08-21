@@ -209,5 +209,21 @@ constructs fake specifications deliberately out of `Order` sequence and asserts 
 evaluates - and stops - by `Order`, not by the sequence they were passed in. Without this test, a
 future refactor could reintroduce an implicit ordering dependency without anything failing.
 
+### Change request: upper bound on loan amount and asset value
+
+Craig asked for an upper bound on both fields "to protect against overflow," suggesting 1
+quadrillion minus 0.01 (`999,999,999,999,999.99`). Added that constant to
+`LoanApplicationFieldValidator` and a new switch-expression branch on both `ValidateLoanAmount` and
+`ValidateAssetValue`. Worth noting for context: `decimal`'s actual range is far larger
+(~7.9×10^28), so this isn't preventing a real arithmetic overflow in `LoanApplication.LoanToValue`
+- it's a defensive sanity bound on unrealistic input, requested and implemented as specified rather
+than second-guessed.
+
+Boundary tests for this were written as plain `[Fact]`s with in-source `decimal` literals
+(`999_999_999_999_999.99m`), not `[InlineData]`. `[InlineData]` numeric literals are compiled as
+`double` and converted to `decimal` at test-invocation time; at this magnitude (17 significant
+digits, beyond `double`'s ~15-17 digit precision) that round-trip risked landing a hair off the
+intended boundary and making the test flaky in a way that wouldn't be obvious from reading it.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.

@@ -34,6 +34,26 @@ public static class LoanApplicationFieldValidatorTests
             Assert.True(result.IsValid);
             Assert.Null(result.ErrorMessage);
         }
+
+        [Fact]
+        public void ShouldBeValid_WhenLoanAmountIsExactlyTheMaximum()
+        {
+            // Written as a decimal literal, not [InlineData], so there's no double round-trip at
+            // this magnitude to lose precision on the boundary.
+            var result = Validator.ValidateLoanAmount(999_999_999_999_999.99m);
+
+            Assert.True(result.IsValid);
+            Assert.Null(result.ErrorMessage);
+        }
+
+        [Fact]
+        public void ShouldBeInvalid_WhenLoanAmountIsOneCentAboveTheMaximum()
+        {
+            var result = Validator.ValidateLoanAmount(1_000_000_000_000_000.00m);
+
+            Assert.False(result.IsValid);
+            Assert.NotNull(result.ErrorMessage);
+        }
     }
 
     public class ValidateAssetValue() : LoanApplicationFieldValidatorTestsBase
@@ -60,6 +80,24 @@ public static class LoanApplicationFieldValidatorTests
 
             Assert.True(result.IsValid);
             Assert.Null(result.ErrorMessage);
+        }
+
+        [Fact]
+        public void ShouldBeValid_WhenAssetValueIsExactlyTheMaximum()
+        {
+            var result = Validator.ValidateAssetValue(999_999_999_999_999.99m);
+
+            Assert.True(result.IsValid);
+            Assert.Null(result.ErrorMessage);
+        }
+
+        [Fact]
+        public void ShouldBeInvalid_WhenAssetValueIsOneCentAboveTheMaximum()
+        {
+            var result = Validator.ValidateAssetValue(1_000_000_000_000_000.00m);
+
+            Assert.False(result.IsValid);
+            Assert.NotNull(result.ErrorMessage);
         }
     }
 

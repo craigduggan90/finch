@@ -6,15 +6,23 @@ namespace Finch.Console.Validation;
 /// </summary>
 public class LoanApplicationFieldValidator
 {
-    public FieldValidationResult ValidateLoanAmount(decimal loanAmount) =>
-        loanAmount > 0
-            ? FieldValidationResult.Ok()
-            : FieldValidationResult.Fail("Loan amount must be greater than zero.");
+    // 1 quadrillion minus 0.01 - an upper bound comfortably below decimal's actual range, just to
+    // reject unrealistic input before it reaches arithmetic like LoanApplication.LoanToValue.
+    private const decimal MaximumAmount = 999_999_999_999_999.99m;
 
-    public FieldValidationResult ValidateAssetValue(decimal assetValue) =>
-        assetValue > 0
-            ? FieldValidationResult.Ok()
-            : FieldValidationResult.Fail("Asset value must be greater than zero.");
+    public FieldValidationResult ValidateLoanAmount(decimal loanAmount) => loanAmount switch
+    {
+        <= 0 => FieldValidationResult.Fail("Loan amount must be greater than zero."),
+        > MaximumAmount => FieldValidationResult.Fail("Loan amount must not exceed £999,999,999,999,999.99."),
+        _ => FieldValidationResult.Ok(),
+    };
+
+    public FieldValidationResult ValidateAssetValue(decimal assetValue) => assetValue switch
+    {
+        <= 0 => FieldValidationResult.Fail("Asset value must be greater than zero."),
+        > MaximumAmount => FieldValidationResult.Fail("Asset value must not exceed £999,999,999,999,999.99."),
+        _ => FieldValidationResult.Ok(),
+    };
 
     public FieldValidationResult ValidateCreditScore(int creditScore) =>
         creditScore is >= 1 and <= 999
