@@ -517,5 +517,35 @@ Existing tests needed no changes, since the identity guarantees identical result
 `sum / count` approach for every value that doesn't overflow it. Also reproduced the exact scenario
 against the real running app (not just the unit test) to confirm the session no longer crashes.
 
+### Coverage audit: found and closed two real gaps
+
+Craig asked whether recent changes were tested. Rather than guess, `Microsoft.Testing.Extensions.
+CodeCoverage` was added *temporarily* to both test projects (not committed - reverted via `git
+checkout` after each run) to get real line/branch numbers, since `coverlet.collector` doesn't work
+under the MTP runner (see the earlier CI entry in this log) and a plain `dotnet-coverage collect`
+profiler-attach didn't initialize against it either.
+
+Overall: 86% line / 95.2% branch. Cross-referencing the specific uncovered lines against source
+found the coverage tool correctly flags `private const` field declarations as "uncovered" (they're
+compile-time constants with no runtime statement to hit - a tooling artifact, not a gap) and the
+three deliberately-untested real-I/O classes (`Program`, `SystemConsoleWriter`,
+`SystemConsoleReader`) at 0%, exactly as designed and already documented.
+
+Two genuine, pre-existing gaps did turn up, both about assertions rather than logic: three
+specifications' exact `Description` text (`HighValueLtvSpecification`,
+`LowValueLtvBand1CreditScoreSpecification`, `LowValueLtvBand3CreditScoreSpecification`) was never
+asserted as a `decision.Reason` - the integration decline theory only covered 5 of the 8 possible
+first-failing-rule paths, even though each rule's `IsApplicableTo`/`IsSatisfiedBy` logic was already
+100% branch-covered by its own dedicated unit tests. And `ValidateCreditScore`'s "must not exceed
+999" message was never asserted anywhere (only "must be at least 1" was, via a reader test).
+
+Closed both: added the three missing decline cases to
+`LendingPlatformIntegrationTests.Evaluate.ShouldReturnDeclinedWithExpectedReason_ForEachDeclineCase`
+(with the LTV computed in a comment for each, e.g. "LTV 80%"), and split
+`ValidateCreditScore`'s single combined theory into two, each asserting its own exact message text
+instead of just `NotNull`. Re-ran the same coverage instrumentation afterward to confirm all three
+`Description` lines flipped from 0 hits to covered, rather than assuming the new test cases landed
+where intended.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.

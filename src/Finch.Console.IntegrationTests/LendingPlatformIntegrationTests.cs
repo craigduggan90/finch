@@ -44,9 +44,12 @@ public static class LendingPlatformIntegrationTests
         [Theory]
         [InlineData(50_000, 100_000, 999, "Loan amount must be at least £100,000.")]
         [InlineData(1_600_000, 2_000_000, 999, "Loan amount must not exceed £1,500,000.")]
+        [InlineData(1_200_000, 1_500_000, 999, "High value loans (£1m or more) require an LTV of 60% or less.")] // LTV 80%
         [InlineData(1_200_000, 2_000_000, 900, "High value loans (£1m or more) require a credit score of at least 950.")]
         [InlineData(950_000, 1_000_000, 999, "Loans under £1,000,000 require an LTV below 90%.")]
+        [InlineData(500_000, 1_000_000, 700, "Loans under £1,000,000 with LTV below 60% require a credit score of at least 750.")] // LTV 50%, band 1
         [InlineData(700_000, 1_000_000, 750, "Loans under £1,000,000 with LTV between 60% and 80% require a credit score of at least 800.")]
+        [InlineData(850_000, 1_000_000, 850, "Loans under £1,000,000 with LTV between 80% and 90% require a credit score of at least 900.")] // LTV 85%, band 3
         public void ShouldReturnDeclinedWithExpectedReason_ForEachDeclineCase(decimal loanAmount, decimal assetValue, int creditScore, string expectedReason)
         {
             var application = new LoanApplication(loanAmount, assetValue, creditScore);

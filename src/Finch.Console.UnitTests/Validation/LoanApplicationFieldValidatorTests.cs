@@ -101,14 +101,23 @@ public static class LoanApplicationFieldValidatorTests
         [Theory]
         [InlineData(0)]
         [InlineData(-1)]
-        [InlineData(1000)]
-        [InlineData(1001)]
-        public void ShouldBeInvalid_WhenCreditScoreIsOutsideOneToNineNineNine(int creditScore)
+        public void ShouldReturnAtLeastOneMessage_WhenCreditScoreIsBelowMinimum(int creditScore)
         {
             var result = Validator.ValidateCreditScore(creditScore);
 
             Assert.False(result.IsValid);
-            Assert.NotNull(result.ErrorMessage);
+            Assert.Equal("Credit score must be at least 1.", result.ErrorMessage);
+        }
+
+        [Theory]
+        [InlineData(1000)]
+        [InlineData(1001)]
+        public void ShouldReturnNotExceedMessage_WhenCreditScoreIsAboveMaximum(int creditScore)
+        {
+            var result = Validator.ValidateCreditScore(creditScore);
+
+            Assert.False(result.IsValid);
+            Assert.Equal("Credit score must not exceed 999.", result.ErrorMessage);
         }
 
         [Theory]
