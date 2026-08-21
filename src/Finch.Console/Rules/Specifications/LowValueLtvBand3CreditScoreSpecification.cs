@@ -14,9 +14,11 @@ public class LowValueLtvBand3CreditScoreSpecification : ISpecification<LoanAppli
     public string Description => "Loans under £1,000,000 with LTV between 80% and 90% require a credit score of at least 900.";
 
     public bool IsApplicableTo(LoanApplication item) =>
-        item.LoanAmount < RuleThresholds.HighValueThreshold
-        && item.LoanToValue >= BandFloorLtv
-        && item.LoanToValue < BandCeilingLtv;
+        item is
+        {
+            LoanAmount: < RuleThresholds.HighValueThreshold,
+            LoanToValue: >= BandFloorLtv and < BandCeilingLtv
+        };
 
     public bool IsSatisfiedBy(LoanApplication item) => item.CreditScore >= MinimumCreditScore;
 }
