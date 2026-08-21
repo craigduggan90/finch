@@ -11,7 +11,7 @@ public class LoanApplicationStatistics
     private int _approvedCount;
     private int _declinedCount;
     private decimal _totalValueWritten;
-    private decimal _totalLoanToValue;
+    private decimal _meanLoanToValue;
 
     public int TotalApplicants => _approvedCount + _declinedCount;
 
@@ -21,7 +21,7 @@ public class LoanApplicationStatistics
 
     public decimal TotalValueWritten => _totalValueWritten;
 
-    public decimal MeanLoanToValue => TotalApplicants == 0 ? 0 : _totalLoanToValue / TotalApplicants;
+    public decimal MeanLoanToValue => _meanLoanToValue;
 
     public void Record(LoanApplication application, LoanDecision decision)
     {
@@ -35,6 +35,10 @@ public class LoanApplicationStatistics
             _declinedCount++;
         }
 
-        _totalLoanToValue += application.LoanToValue;
+        // Incremental mean (see CLAUDE.md) instead of a running sum divided by count: a single
+        // LoanToValue can be as large as decimal.MaxValue (LoanApplicationFieldValidator's ceiling
+        // is derived to make that possible), so summing every one recorded could overflow even
+        // though the mean itself never exceeds the largest individual value seen.
+        _meanLoanToValue += (application.LoanToValue - _meanLoanToValue) / TotalApplicants;
     }
 }

@@ -52,5 +52,25 @@ public static class LoanApplicationStatisticsTests
             Assert.Equal(0m, statistics.TotalValueWritten);
             Assert.Equal(1, statistics.DeclinedCount);
         }
+
+        [Fact]
+        public void ShouldNotOverflow_WhenAnExtremeLoanToValueIsFollowedByAnotherApplication()
+        {
+            var statistics = new LoanApplicationStatistics();
+
+            // LoanAmount at the validator's ceiling with AssetValue at its floor (0.01) drives
+            // LoanToValue to exactly decimal.MaxValue - the worst case the mean has to handle.
+            var extremeApplication = new LoanApplication(decimal.MaxValue / 10_000m, 0.01m, 500);
+            Assert.Equal(decimal.MaxValue, extremeApplication.LoanToValue);
+
+            statistics.Record(extremeApplication, LoanDecision.Declined("too risky"));
+
+            // A sum-based mean would compute decimal.MaxValue + 50 here and throw OverflowException.
+            statistics.Record(new LoanApplication(500_000, 1_000_000, 800), LoanDecision.Approved());
+
+            // True mean of {decimal.MaxValue, 50} is (decimal.MaxValue + 50) / 2, computed here as
+            // decimal.MaxValue / 2 + 25 so the expected-value calculation doesn't overflow either.
+            Assert.Equal(decimal.MaxValue / 2m + 25m, statistics.MeanLoanToValue, precision: 10);
+        }
     }
 }

@@ -488,5 +488,34 @@ integration tests that build the real container and exercise all 8 rules end-to-
 drove the running app through a high-value and a low-value-band case to confirm reflection
 discovered every rule at actual runtime, not just under test.
 
+### Bug fix: `LoanApplicationStatistics` could overflow after just two applications
+
+Craig spotted this via code review rather than running anything: deriving the loan amount ceiling
+from `decimal.MaxValue / 10,000` (see the change above) means a single application's `LoanToValue`
+can now land at exactly `decimal.MaxValue`. `LoanApplicationStatistics` summed every recorded
+`LoanToValue` into a running total (`_totalLoanToValue += ...`) and divided by count only when
+`MeanLoanToValue` was read - so after one application at that extreme, recording *any* second
+application (even an ordinary one) computed `decimal.MaxValue + <anything positive>`, an unhandled
+`OverflowException` that would crash the whole interactive session. Before the ceiling was derived
+this precisely, reaching that state took on the order of 10^9 applications; the tighter, correct
+ceiling made it reachable in exactly two.
+
+Tightening the ceiling further wouldn't fix this - it only moves the threshold back out, and is
+reachable again given enough applications in a long-running session. The actual fix is to stop
+summing an unbounded quantity: `MeanLoanToValue` is now maintained as an incremental running mean
+(`mean += (newValue - mean) / count`), the same identity Welford's algorithm uses. This is an exact
+identity, not an approximation - algebraically equal to `sum / count` - and because a mean can never
+exceed the largest individual value it's computed from, and every `LoanToValue` is itself bounded to
+`decimal.MaxValue` by the validator, the running mean is provably bounded in the same range at every
+step. Verified this holds by walking the algebra through by hand (see the chat transcript) before
+writing any code, then added a test reproducing the exact failure: one application with `LoanAmount
+= decimal.MaxValue / 10_000m, AssetValue = 0.01m` (driving `LoanToValue` to exactly
+`decimal.MaxValue`) followed by an ordinary second application, asserting the exact expected mean
+`decimal.MaxValue / 2m + 25m` - computed that way rather than as `(decimal.MaxValue + 50m) / 2m` so
+the *test's* expected-value calculation doesn't reproduce the same overflow it's checking for.
+Existing tests needed no changes, since the identity guarantees identical results to the old
+`sum / count` approach for every value that doesn't overflow it. Also reproduced the exact scenario
+against the real running app (not just the unit test) to confirm the session no longer crashes.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.
