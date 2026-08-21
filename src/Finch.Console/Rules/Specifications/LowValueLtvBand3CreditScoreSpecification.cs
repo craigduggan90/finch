@@ -3,9 +3,8 @@ using Finch.Console.Domain;
 namespace Finch.Console.Rules.Specifications;
 
 /// <summary>Loans under £1m with LTV in [80%, 90%) require a credit score of at least 900.</summary>
-public class LowValueLtvBand3CreditScoreSpecification : ISpecification<LoanApplication>
+public class LowValueLtvBand3CreditScoreSpecification : HighValueThresholdSpecification, ISpecification<LoanApplication>
 {
-    private const decimal HighValueThreshold = 1_000_000m;
     private const decimal BandFloorLtv = 80m;
     private const decimal BandCeilingLtv = 90m;
     private const int MinimumCreditScore = 900;

@@ -272,5 +272,21 @@ normal completion, invalid-input retry (non-numeric then negative), and the pipe
 directly above - to make sure consolidating the two methods didn't quietly change behaviour in any
 of them.
 
+### Simplification: shared `HighValueThreshold` base class
+
+Craig pointed out the £1m threshold (`private const decimal HighValueThreshold = 1_000_000m`) was
+copy-pasted verbatim into 6 of the 8 specification classes (both high-value rules, and all four
+low-value rules that key off "under £1m"). Added `HighValueThresholdSpecification`, an abstract
+class holding just that one `protected const`, and had the six affected classes inherit it
+alongside still implementing `ISpecification<LoanApplication>` directly (a class can have one base
+class and implement interfaces at the same time - no conflict with the specification pattern).
+
+Deliberately left alone: the LTV band boundaries (`60m`, `80m`, `90m`) that appear in adjacent
+band specifications - e.g. `60m` is band 1's ceiling and band 2's floor. Those are the same *value*
+in different classes, but not the same *constant* being copy-pasted (different name, different
+role, no shared source of truth to extract without coupling two classes' band edges together in a
+way that wasn't asked for). Flagging this distinction rather than silently going further than the
+request.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.
