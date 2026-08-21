@@ -19,15 +19,27 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
     /// </summary>
     public LoanApplicationRequest? ReadApplication()
     {
-        var loanAmount = ReadDecimalField("Loan amount (GBP): ", validator.ValidateLoanAmount);
+        var loanAmount = ReadField<decimal>(
+            "Loan amount (GBP): ",
+            raw => decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null,
+            "Enter a valid number.",
+            validator.ValidateLoanAmount);
         if (loanAmount is null)
             return null;
 
-        var assetValue = ReadDecimalField("Asset value (GBP): ", validator.ValidateAssetValue);
+        var assetValue = ReadField<decimal>(
+            "Asset value (GBP): ",
+            raw => decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : null,
+            "Enter a valid number.",
+            validator.ValidateAssetValue);
         if (assetValue is null)
             return null;
 
-        var creditScore = ReadIntField("Applicant credit score (1-999): ", validator.ValidateCreditScore);
+        var creditScore = ReadField<int>(
+            "Applicant credit score (1-999): ",
+            raw => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : null,
+            "Enter a whole number.",
+            validator.ValidateCreditScore);
         if (creditScore is null)
             return null;
 
@@ -42,7 +54,12 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
                || string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase);
     }
 
-    private decimal? ReadDecimalField(string prompt, Func<decimal, FieldValidationResult> validate)
+    /// <summary>
+    /// Prompts for one field, re-prompting on a parse or validation failure, until a valid value is
+    /// read or input ends (EOF), in which case this returns null rather than looping forever.
+    /// </summary>
+    private T? ReadField<T>(string prompt, Func<string, T?> tryParse, string parseErrorMessage, Func<T, FieldValidationResult> validate)
+        where T : struct
     {
         while (true)
         {
@@ -56,51 +73,21 @@ public class ConsoleLoanApplicationReader(LoanApplicationFieldValidator validato
                 return null;
             }
 
-            if (!decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value))
+            var parsed = tryParse(raw);
+            if (parsed is null)
             {
-                writer.WriteLine("Enter a valid number.");
+                writer.WriteLine(parseErrorMessage);
                 continue;
             }
 
-            var result = validate(value);
+            var result = validate(parsed.Value);
             if (!result.IsValid)
             {
                 writer.WriteLine(result.ErrorMessage!);
                 continue;
             }
 
-            return value;
-        }
-    }
-
-    private int? ReadIntField(string prompt, Func<int, FieldValidationResult> validate)
-    {
-        while (true)
-        {
-            writer.Write(prompt);
-            var raw = System.Console.ReadLine();
-
-            if (raw is null)
-            {
-                writer.WriteLine();
-                writer.WriteLine("No more input received - ending session.");
-                return null;
-            }
-
-            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
-            {
-                writer.WriteLine("Enter a whole number.");
-                continue;
-            }
-
-            var result = validate(value);
-            if (!result.IsValid)
-            {
-                writer.WriteLine(result.ErrorMessage!);
-                continue;
-            }
-
-            return value;
+            return parsed.Value;
         }
     }
 }

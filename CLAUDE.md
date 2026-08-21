@@ -250,5 +250,27 @@ Verified directly rather than assumed fixed: re-ran the exact repro (`echo "1000
 EOF immediately after a completed application (the pre-existing correct path) to make sure nothing
 regressed.
 
+### Simplification: consolidated ReadDecimalField/ReadIntField
+
+Craig pointed out `ReadDecimalField` and `ReadIntField` were near-identical - same prompt/loop/EOF/
+validate structure, differing only in which `TryParse` overload and parse-error message they used.
+Consolidated into a single `private T? ReadField<T>(string prompt, Func<string, T?> tryParse,
+string parseErrorMessage, Func<T, FieldValidationResult> validate) where T : struct`.
+
+This is the same generic-inference territory that broke the first time (logged above, under
+"Implementation pass") - but a different, working shape. The earlier failure was referencing a bare
+generic *type*'s static members without type arguments (`FieldParseResult.Ok(value)`), which
+doesn't compile. This time it's a generic *method*, called with `Func<string, T?>` lambdas - but
+even so, the compiler couldn't infer `T` from `raw => decimal.TryParse(...) ? value : null` on its
+own (`CS0411`), so call sites specify it explicitly: `ReadField<decimal>(...)` /
+`ReadField<int>(...)`. Confirmed by building (it failed first, exactly as described, before the
+explicit type arguments were added) rather than assuming the generic method would just infer.
+
+Re-verified after the change: full test suite (84/84, none of this is exercised by tests - see the
+known gap noted earlier), plus manually re-ran all three interactive paths this file touches -
+normal completion, invalid-input retry (non-numeric then negative), and the piped-EOF fix from
+directly above - to make sure consolidating the two methods didn't quietly change behaviour in any
+of them.
+
 This log will be extended as implementation proceeds — further iterations, corrections, or
 questioned AI output belong here, per the test's requirement to document AI usage.
