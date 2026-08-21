@@ -44,9 +44,3 @@ fake).
 
 See [`CLAUDE.md`](CLAUDE.md#business-rules-flattened) for the full rule table and the reasoning
 behind flattening the spec's cascading LTV thresholds into independent bands.
-
-## AI usage
-
-This project was built with Claude Code. The AI collaboration log — key prompts, the clarifying
-questions asked before implementation, and a design decision that was reconsidered mid-conversation
-— is in [`CLAUDE.md`](CLAUDE.md#ai-collaboration-log).

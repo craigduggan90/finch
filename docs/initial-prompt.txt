@@ -1,0 +1,116 @@
+Before we get started - I want you to populate Claude.md, ask any clarifying questions, and output an execution plan to /doc/implementation-plan.md.  Don’t start implementation until the plan is confirmed.
+
+
+I’ve scaffolded three projects, Finch.Console, Finch.Console.UnitTests, and Finch.Console.IntegrationTests.  Check what’s in them and take that as truth if any other information I provide exists in conflict.
+
+This is a tech test, the spec PDF is in /docs/spec.pdf.  To summarise:
+Create a console app simulating a basic lending platform.  Timebox 1h, not production-ready but code should be clean, SOLID, and well tested.  Write Claude.md as reference material for the work.
+
+Inputs (User):
+Loan amount (GBP)
+Asset value the loan is secured against (assumed GBP)
+Applicant credit score (1-999)
+
+Output (to console)
+Loan decision (success or (declined+why))
+Total applicants (broken down by success/declined)
+Total value of loans written (success)
+Mean LTV across ALL applications
+
+LTV = loan amount as a percentage of asset value
+
+Business rules:
+Category: General
+Decline if loan is < 100k or > 1.5m
+
+Category: High value loans (loan amount >= 1m)
+LTV <= 60%
+Credit Score >= 950
+
+Category: Low value loans (loan amount < 1m)
+LTV < 90%
+LTV < 60% then CreditScore must be >= 750
+LTV < 80% then CreditScore must be >= 800
+LTV < 90% then CreditScore must be >= 900
+
+Evaluation criteria:
+Correctness of logic
+Clarity and maintainability of code
+SOC and Modularity
+Effective use of AI, quality of prompting, iteration, and critical review of output (so log all decisions in claude.md)
+Ability to explain reasoning, assumptions, and trade-offs
+
+Submission:
+Public Git repo
+Instructions for running the applications included (keep Readme.MD up-to-date for this)
+Include your AI log, key prompts, iterations, and any output you questioned or corrected (see: Effective use of AI)
+
+Early decisions:
+
+I want to keep “writing” logic isolated to one class injected via the DI container.  This will allow us to swap the class in the integration tests similar to using FakeLogger with ILogger.  No other class should write to Console.*.  Worth stating: we’re not using ILogger here because it would muddy the output and I don’t want to use a non-console sink right now.
+
+We’ll need to validate the user input, too - not necessarily business logic, just IValidator<LoanApplicationRequest> kind of stuff - LoanAmount > 0, AssetValue > 0, Credit Score between 1 and 999 inclusive.  We don’t have to use fluentvalidation here (I know I just used it’s nomenclature but w/e).  A setup like this would do:
+
+public record ValidationResult
+{
+  public bool IsSuccess => Errors.IsEmpty;
+
+  public Dictionary<string, string> Errors { get; } = new();
+}
+
+public class LoanApplicationRequestValidator
+{
+  public ValidationResult Validate(LoanApplicationRequest input)
+  {
+    var result = new ValidationResult
+    If (input.LoanAmount <= 0)
+      result.Errors.Add(nameof(LoanApplicationRequest.LoanAmount), “Loan amount must be greater than zero.”);
+    // .. etc
+  }
+}
+
+This should be done before LoanApplicationRequest is mapped to LoanApplication (since LTV involves division and could lead to a div/0 error)
+
+Loan application should be something like
+public record LoanApplication(decimal LoanAmount, decimal AssetValue, int CreditScore)
+{
+    public decimal LoanToValue => (LoanAmount/AssetValue) * 100;
+}
+
+
+We’ll use a specification pattern:
+public interface ISpecification<T>
+{
+  // checks whether we should run the rule
+  bool IsApplicableTo(T item);
+
+
+  // applies the rule and returns true (is satisfied) or false (is not satisfied)
+  bool IsSatisfiedBy(T item);
+
+
+  // we can use this to describe the rule in plain-text for user feedback 
+  // (with i18n you’d use a key but this is a tech test)
+  string Description { get ; }
+}
+
+Each rule is its own small class implementing ISpecification, no combined rules (so each of the low-value LTV criteria is its own rule).  Register each implementation with the container and inject them into the RulesEngine as IEnumerable<ISpecification<LoanApplication>>.  Everything can be synchronous for now - we don’t have anything that’ll need async/await.
+
+I think the rules should be
+IsApplicableTo => true; IsSatisfiedBy => LoanAmount >= 100_000
+IsApplicableTo => true; IsSatisfiedBy => LoanAmount <= 1_500_000
+IsApplicableTo => LoanAmount >= 1_000_000; IsSatisfiedBy => LTV <= 60
+IsApplicableTo => LoanAmount >= 1_000_000; IsSatisfiedBy => CreditScore >= 950
+IsApplicableTo => LoanAmount < 1_000_000; IsSatisfiedBy => LTV < 90
+IsApplicableTo => LoanAmount < 1_000_000 && LTV < 60; IsSatisfiedBy => CreditScore >= 750
+IsApplicableTo => LoanAmount < 1_000_000 && LTV >= 60 && LTV < 80; IsSatisfiedBy => CreditScore >= 800
+IsApplicableTo => LoanAmount < 1_000_000 && LTV >= 80 && LTV < 90; IsSatisfiedBy => CreditScore >= 900
+
+Unit tests should test all of the boundaries of each rule - they’re clear-box tests intended to be exhaustive.  Each spec class is tested in isolation.
+Integration tests should use the real DI resolved rule collection for pseudo end-to-end testing and aggregate stats.  We can stub out the output writer as mentioned earlier.
+
+Claude.md should include future-notes: rule families/grouping (the ones we were given are clustered, we’re flattening them now, but there could be relationships in future), execution order matters since we’ll return the first failure so you could wind up playing whack-a-mole.  Aforementioned sync nature.  Rules persistence and versioning for audit.  Logging and traceability skipped for now.
+
+Before writing the implementation plan, ask me anything ambiguous or undecided.  Don’t guess.  I’d like the implementation plan to cover all of the files you’d expect to create in the .Console project and what the aim of that file is.
+
+Don’t actually implement anything until the implementation plan is accepted.
